@@ -45,6 +45,7 @@
     let notLoaded = true;
     let cardsTotal = 0;
     let skeletonsTotal = 0;
+    let dynamicVideoUrls = [];
 
     let downloadQueueCard = document.createElement('div');
     downloadQueueCard.style.position = 'fixed';
@@ -1218,7 +1219,6 @@
     function handleCard(card) {
         // console.log('handleCard', card);
         if (card.getElementsByClassName('bili-album').length > 0 || card.getElementsByClassName('bili-dyn-gallery').length > 0) {
-            // console.log('add download button');
             card.getElementsByClassName('bili-album__preview__picture__img').forEach((img) => {
                 img.addEventListener('click', function(event) {
                     addDownloadButton(card);
@@ -1227,6 +1227,22 @@
             addDownloadButton(card);
         } else if (GM_getValue('enableVideoDownload', true) && card.getElementsByClassName('bili-dyn-card-video').length > 0 && card.getElementsByClassName('bili-dyn-action like disabled').length === 0) {
             addDownloadButton(card);
+        }
+
+        const badge = card.querySelector('.bili-dyn-card-video__badge');
+        if (badge && badge.textContent.includes('动态视频')) {
+            const videoLink = card.querySelector('a.bili-dyn-card-video');
+            if (videoLink) {
+                let href = videoLink.getAttribute('href');
+                if (href.startsWith('//')) {
+                    href = 'https:' + href;
+                } else if (href.startsWith('/')) {
+                    href = 'https://www.bilibili.com' + href;
+                }
+                if (!dynamicVideoUrls.includes(href)) {
+                    dynamicVideoUrls.push(href);
+                }
+            }
         }
     }
 
@@ -2066,8 +2082,8 @@
     let listDownloading = false;
     let stopDownloadingList = false;
     let listDownloadingIndex = 0;
+
     async function downloadList(e) {
-        // console.log(this);
         if (!listDownloading && !stopDownloadingList) {
             listDownloading = true;
             listDownloadingIndex = 0;
@@ -2077,27 +2093,22 @@
             while(!stopDownloadingList) {
                 const selfListDom = document.body.querySelector('div.bili-dyn-list');
                 if (selfListDom) {
-                    // console.log(selfListDom);
                     const contentDoms = selfListDom.querySelectorAll('div.bili-dyn-item__main');
                     this.textContent = `停止下载瀑布流\n(正在下载第 ${(listDownloadingIndex + 1).toString()} 个动态)`;
                     const contentDom = contentDoms[listDownloadingIndex];
                     if (contentDom) {
                         contentDom.scrollIntoView();
-                        // console.log(contentDom);
                         const alreadyDownloaded = checkDynDownloaded(contentDom);
                         const downloadButton = contentDom.querySelector('div.download-button span');
                         if (downloadButton && ((!alreadyDownloaded) || (!GM_getValue('listDownloadSkipAlreadyDownloaded', true) && alreadyDownloaded)) && !(GM_getValue('listDownloadSkipReference', true) && contentDom.querySelector('div.reference'))) {
                             const opusCard = contentDom.querySelector('div.dyn-card-opus');
-                            // console.log("opusCard: ", opusCard);
                             const videoCard = contentDom.querySelector('a.bili-dyn-card-video');
-                            // console.log(videoCard);
                             let dynId;
                             if (opusCard) {
                                 dynId = opusCard.$log?.click.value.card_id;
                             } else if (videoCard) {
                                 dynId = videoCard.$log?.click.value.card_id;
                             }
-                            // console.log(dynId);
                             if (dynId) {
                                 const downloadSuccess = await handleDynamicDownload(dynId, downloadButton);
                                 if (downloadSuccess) {
@@ -2106,9 +2117,7 @@
                                     if (retryAttempts < GM_getValue('listDownloadRetryAttempsLimit', 3)) {
                                         listDownloadingIndex -= 1;
                                         retryAttempts += 1;
-                                    } else if (confirm(`出现错误${e.message}，已重试 ${retryAttempts} 次，还要继续吗？\n“确定” —— 跳过（一般是接口限制了，建议跳过，手动下载保存。B站真的很严格；\n“取消” —— 停止）`)) {
-                                        // listDownloadingIndex -= 1;
-                                        // retryAttempts += 1;
+                                    } else if (confirm(`出现错误，已重试 ${retryAttempts} 次，还要继续吗？\n“确定” —— 跳过\n“取消” —— 停止`)) {
                                         retryAttempts = 0;
                                     } else {
                                         stopDownloadingList = true;
@@ -2132,6 +2141,9 @@
             retryAttempts = 0;
             this.textContent = '下载当前瀑布流';
             this.disabled = false;
+
+            console.log('动态视频地址数组：', dynamicVideoUrls);
+
         } else if (listDownloading && !stopDownloadingList) {
             stopDownloadingList = true;
             this.textContent = '正在停止下载瀑布流……';
